@@ -1,4 +1,6 @@
-# PDF Text Extractor
+# PDF Text Extractor - Work in Progress
+
+Free bugs included
 
 A Python-based tool for extracting, validating, and processing text from PDF documents with advanced NLP capabilities and Markdown conversion.
 
