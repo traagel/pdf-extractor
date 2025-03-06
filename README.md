@@ -28,7 +28,7 @@ PDF Text Extractor is a comprehensive solution for transforming PDF documents in
 ### Option 1: Using UV (Recommended)
 
     # Clone the repository
-    git clone https://github.com/yourusername/pdf-text-extractor.git
+    git clone https://github.com/traagel/pdf-extractor.git
     cd pdf-text-extractor
 
     # Create and activate a virtual environment with UV
@@ -43,18 +43,22 @@ PDF Text Extractor is a comprehensive solution for transforming PDF documents in
 
 ### Option 2: Using Standard Pip
 
-    # Clone the repository
-    git clone https://github.com/yourusername/pdf-text-extractor.git
+#### Clone the repository
+
+    git clone https://github.com/traagel/pdf-extractor.git
     cd pdf-text-extractor
 
-    # Create and activate a virtual environment
+#### Create and activate a virtual environment
+
     python -m venv venv
     source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-    # Install using pip
+#### Install using pip
+
     pip install -e .
 
-    # For development dependencies
+#### For development dependencies
+
     pip install -e ".[dev]"
 
 ## 📋 System Requirements
@@ -153,28 +157,34 @@ After installation, you can use the PDF Text Extractor in several ways:
 ## 🧩 Main Components
 
 ### Extraction Module
+
 - **PDFExtractor**: Core PDF text extraction with multiple methods
 - **ImageTextExtractor**: OCR-based extraction for images and scanned PDFs
 
 ### Processing Module
+
 - **TextProcessor**: Structures PDF content into organized sections
 - **ChapterProcessor**: Identifies and extracts chapters
 - **TableProcessor**: Recognizes and formats tables in text
 - **LineProcessor**: Handles line-based text processing
 
 ### NLP Module
+
 - **TextStructureAnalyzer**: Document structure analysis
 - **TextCleaner**: Fixes common extraction artifacts
 - **TextValidator**: Validates text quality
 
 ### Converters Module
+
 - **MarkdownConverter**: Converts structured content to Markdown format
 
 ### Validation Module
+
 - **TextValidator**: Checks extraction quality
 - **SchemaValidator**: Validates output against schemas
 
 ### Utils Module
+
 - **Logger**: Configurable logging
 - **FileHandler**: File I/O utilities
 
@@ -195,6 +205,7 @@ The PDF Text Extractor includes a powerful Markdown conversion feature:
     python -m src convert-md data/output/processed/ --recursive -o docs/
 
 Markdown conversion features:
+
 - Table of contents generation
 - Clean formatting of chapters and sections
 - Table support
