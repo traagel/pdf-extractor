@@ -27,18 +27,22 @@ PDF Text Extractor is a comprehensive solution for transforming PDF documents in
 
 ### Option 1: Using UV (Recommended)
 
-    # Clone the repository
+#### Clone the repository
+
     git clone https://github.com/traagel/pdf-extractor.git
     cd pdf-text-extractor
 
-    # Create and activate a virtual environment with UV
+#### Create and activate a virtual environment with UV
+
     uv venv --python 3.11.11
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-    # Install with UV
+#### Install with UV
+
     uv pip install -e .
 
-    # For development dependencies (testing, linting, etc.)
+#### For development dependencies (testing, linting, etc.)
+
     uv pip install -e ".[dev]"
 
 ### Option 2: Using Standard Pip
