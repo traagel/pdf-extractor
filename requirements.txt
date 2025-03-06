@@ -1,0 +1,36 @@
+# PDF Processing
+PyMuPDF
+pypdf
+
+# OCR and Image Processing
+pytesseract
+Pillow
+numpy
+
+# NLP libraries
+spacy
+nltk
+
+# File Handling
+pyyaml
+
+# CLI Tools
+inquirer
+blessed
+six
+wcwidth
+
+# Development and Testing
+pytest
+pytest-cov
+black
+flake8
+
+# Note: Additional system dependencies
+# - Tesseract OCR engine must be installed on the system
+# - For Ubuntu/Debian: sudo apt-get install tesseract-ocr
+# - For macOS: brew install tesseract
+# - For Windows: Download and install from https://github.com/UB-Mannheim/tesseract/wiki
+
+# Add tqdm to your existing requirements
+tqdm>=4.65.0

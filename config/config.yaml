@@ -1,0 +1,24 @@
+# PDF Text Extractor Configuration
+
+# Extraction settings
+extraction:
+  min_text_length: 100
+  use_ocr_fallback: true
+  
+# OCR settings
+ocr:
+  language: eng
+  dpi: 300
+  psm: 1  # Page segmentation mode
+  oem: 3  # OCR Engine mode
+
+# Validation settings
+validation:
+  min_words: 50
+  max_unknown_words: 0.2  # Max 20% unknown words
+
+# Paths
+paths:
+  input_dir: data/input
+  output_dir: data/output
+  models_dir: data/models
