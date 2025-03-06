@@ -103,3 +103,6 @@ env/
 dmypy.json
 .pyre/
 
+# Ignore all PDF files
+*.pdf
+

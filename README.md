@@ -31,9 +31,9 @@ PDF Text Extractor is a comprehensive solution for transforming PDF documents in
     git clone https://github.com/yourusername/pdf-text-extractor.git
     cd pdf-text-extractor
 
-    # Create and activate a virtual environment (optional but recommended)
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    # Create and activate a virtual environment with UV
+    uv venv --python 3.11.11
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
     # Install with UV
     uv pip install -e .
@@ -47,7 +47,7 @@ PDF Text Extractor is a comprehensive solution for transforming PDF documents in
     git clone https://github.com/yourusername/pdf-text-extractor.git
     cd pdf-text-extractor
 
-    # Create and activate a virtual environment (optional but recommended)
+    # Create and activate a virtual environment
     python -m venv venv
     source venv/bin/activate  # On Windows: venv\Scripts\activate
 
