@@ -257,29 +257,51 @@ class MarkdownConverter:
         for line in lines:
             # Clean spacing issues
             cleaned = self._clean_content_text(line)
-            cleaned_lines.append(cleaned)
+            if cleaned:
+                cleaned_lines.append(cleaned)
         
         # Second pass: join lines into paragraphs
         paragraphs = []
         current_para = []
         
-        for line in cleaned_lines:
-            # Skip empty lines
+        for i, line in enumerate(cleaned_lines):
+            # Skip empty lines - they indicate paragraph breaks
             if not line.strip():
                 if current_para:
+                    # Join the current paragraph with proper spacing
                     paragraphs.append(" ".join(current_para))
                     current_para = []
                 continue
             
-            # Add line to current paragraph
-            current_para.append(line)
+            # Check if this line continues the previous line
+            if current_para:
+                prev_line = current_para[-1]
+                # If previous line doesn't end with sentence-ending punctuation
+                # or this line starts with lowercase or continues a sentence
+                if (not re.search(r'[.!?]\s*$', prev_line) or 
+                    re.match(r'^[a-z]', line) or
+                    re.match(r'^(and|or|but|nor|for|yet|so|the|a|an|in|on|at|to|of|with)\b', line.lower()) or
+                    re.search(r'[,;:]$', prev_line)):
+                    # This is a continuation - join with the current paragraph
+                    current_para.append(line)
+                    continue
+            
+            # If we get here, this is a new paragraph
+            if current_para:
+                paragraphs.append(" ".join(current_para))
+            current_para = [line]
         
         # Add the last paragraph if there is one
         if current_para:
             paragraphs.append(" ".join(current_para))
         
-        # Join paragraphs with double newlines
-        return "\n\n".join(paragraphs)
+        # Join paragraphs with double newlines and clean up any extra spaces
+        text = "\n\n".join(paragraphs)
+        # Clean up any multiple spaces
+        text = re.sub(r' +', ' ', text)
+        # Clean up any multiple newlines
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text
     
     def _clean_content_text(self, text: str) -> str:
         """Clean content text by removing abnormal spacing and fixing common issues."""
