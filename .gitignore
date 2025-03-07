@@ -106,3 +106,13 @@ dmypy.json
 # Ignore all PDF files
 *.pdf
 
+# Ignore output markdown files
+data/output/markdown/*.md
+
+# Ignore markdown output directory
+data/output/markdown/
+
+# Ignore output YAML files
+data/output/**/*.yaml
+data/output/**/*.yml
+
