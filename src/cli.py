@@ -473,10 +473,60 @@ def validate_markdown(markdown_path):
     """Validate a markdown file and show results."""
     print(f"Validating markdown file: {markdown_path}")
     
+    # Ask which validator to use
+    questions = [
+        inquirer.List(
+            'validator_type',
+            message='Select validator type:',
+            choices=[
+                ('Simple pattern-based validator (faster, no dependencies)', 'simple'),
+                ('Advanced NLP-based validator (more comprehensive)', 'advanced')
+            ],
+            default='simple'
+        )
+    ]
+    
+    answers = inquirer.prompt(questions)
+    validator_type = answers['validator_type']
+    
+    # If advanced validator selected, check dependencies
+    if validator_type == 'advanced':
+        try:
+            import spacy
+            import language_tool_python
+        except ImportError:
+            print("\nThe advanced validator requires additional dependencies.")
+            
+            questions = [
+                inquirer.Confirm(
+                    'install_deps',
+                    message='Would you like to install the required dependencies?',
+                    default=True
+                )
+            ]
+            
+            answers = inquirer.prompt(questions)
+            if answers['install_deps']:
+                print("\nInstalling dependencies...")
+                
+                try:
+                    import subprocess
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "spacy", "language-tool-python"])
+                    # Also download a spaCy model
+                    subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+                    print("Dependencies installed successfully!")
+                except Exception as e:
+                    print(f"Error installing dependencies: {e}")
+                    print("Falling back to simple validator.")
+                    validator_type = 'simple'
+            else:
+                print("Falling back to simple validator.")
+                validator_type = 'simple'
+    
     # Generate default output path
     default_output_path = str(markdown_path.parent / (markdown_path.stem + "_validation.txt"))
     
-    # Ask for validation options
+    # Common validation options
     questions = [
         inquirer.Confirm(
             'ignore_code',
@@ -498,7 +548,48 @@ def validate_markdown(markdown_path):
             message='Enter path for validation report (or leave empty for default):',
             default=default_output_path,
         ),
+        inquirer.Checkbox(
+            'validation_types',
+            message='Select validation types to perform:',
+            choices=[
+                ('OCR split words (like "w eapon")', 'split_word'),
+                ('OCR joined words (like "thisis")', 'joined_word'),
+                ('Grammar checking', 'grammar'),
+                ('Text coherence', 'coherence')
+            ],
+            default=['split_word', 'joined_word', 'grammar']
+        )
     ]
+    
+    # Add validator-specific options
+    if validator_type == 'simple':
+        questions.append(
+            inquirer.List(
+                'validation_type',
+                message='Select validation types to perform:',
+                choices=[
+                    ('All validations', 'all'),
+                    ('Word validation only (individual word checks)', 'word'),
+                    ('Spacing validation only (split words like "you r")', 'spacing'),
+                    ('Phrase validation only (multi-word errors)', 'phrase')
+                ],
+                default='all'
+            )
+        )
+    else:  # advanced validator
+        questions.append(
+            inquirer.Checkbox(
+                'disabled_categories',
+                message='Select error categories to ignore:',
+                choices=[
+                    ('Style suggestions', 'STYLE'),
+                    ('Typography issues', 'TYPOGRAPHY'),
+                    ('Redundancy warnings', 'REDUNDANCY'),
+                    ('Miscellaneous suggestions', 'MISC')
+                ],
+                default=[]
+            )
+        )
     
     answers = inquirer.prompt(questions)
     
@@ -506,19 +597,45 @@ def validate_markdown(markdown_path):
     if not answers['output_path'].strip():
         answers['output_path'] = default_output_path
     
-    # Configure validator
-    validator_config = {
-        'ignore_code_blocks': answers['ignore_code'],
-        'min_confidence': answers['confidence'],
-        'word_correction': {}
-    }
+    # Configure validator based on type
+    if validator_type == 'simple':
+        # Set validation types based on selection
+        enable_word = answers['validation_type'] in ['all', 'word']
+        enable_spacing = answers['validation_type'] in ['all', 'spacing']
+        enable_phrase = answers['validation_type'] in ['all', 'phrase']
+        
+        # Configure validator
+        validator_config = {
+            'ignore_code_blocks': answers['ignore_code'],
+            'min_confidence': answers['confidence'],
+            'word_correction': {},
+            'enable_word_validation': enable_word,
+            'enable_spacing_validation': enable_spacing,
+            'enable_phrase_validation': enable_phrase
+        }
+        
+        from .nlp.markdown_validator import MarkdownValidator
+        validator = MarkdownValidator(validator_config)
+    else:
+        # Configure advanced validator
+        validator_config = {
+            'ignore_code_blocks': answers['ignore_code'],
+            'min_confidence': answers['confidence'],
+            'timeout': 60,  # seconds
+            'disabled_categories': answers['disabled_categories'],
+            'enabled_validations': answers['validation_types']
+        }
+        
+        from .nlp.advanced_validator import AdvancedTextValidator
+        validator = AdvancedTextValidator(validator_config)
     
     try:
         # Ensure output directory exists
         output_path = Path(answers['output_path'])
         os.makedirs(output_path.parent, exist_ok=True)
         
-        validator = MarkdownValidator(validator_config)
+        # Validate and generate report
+        print(f"\nValidating content... (this may take some time)")
         report = validator.validate_and_report(str(markdown_path), str(output_path))
         
         # Print a summary to console
@@ -530,14 +647,19 @@ def validate_markdown(markdown_path):
         else:
             print(report)
             
-        # Ask if user wants to open the report in a text editor
-        if len(report_lines) > 5:  # Only if there are errors
+        # After running validation and showing report, ask about auto-fixing
+        if validator_type == 'advanced' and len(report_lines) > 5:  # Only if there are errors
             questions = [
                 inquirer.Confirm(
                     'open_report',
                     message='Would you like to open the validation report?',
                     default=False
                 ),
+                inquirer.Confirm(
+                    'fix_errors',
+                    message='Would you like to automatically fix detected OCR issues?',
+                    default=False
+                )
             ]
             answers = inquirer.prompt(questions)
             
@@ -554,6 +676,91 @@ def validate_markdown(markdown_path):
                         subprocess.call(('xdg-open', str(output_path)))
                 except Exception as e:
                     print(f"Could not open report: {e}")
+                
+            # Handle auto-fix option
+            if answers['fix_errors']:
+                questions = [
+                    inquirer.Text(
+                        'output_file',
+                        message='Enter path for corrected file (leave empty to modify original):',
+                        default=str(markdown_path.parent / (markdown_path.stem + "_fixed.md"))
+                    ),
+                    inquirer.List(
+                        'confidence',
+                        message='Select confidence threshold for applying fixes:',
+                        choices=[
+                            ('High (0.95) - Only very confident fixes', 0.95),
+                            ('Medium (0.9) - Balanced', 0.9),
+                            ('Low (0.85) - More aggressive fixing', 0.85),
+                        ],
+                        default=1,
+                    ),
+                    inquirer.Checkbox(
+                        'fix_types',
+                        message='Select types of issues to fix:',
+                        choices=[
+                            ('Split words (like "s p e l l")', 'split_word'),
+                            ('Joined words (like "spellcasting")', 'joined_word')
+                        ],
+                        default=['split_word', 'joined_word']
+                    )
+                ]
+                answers = inquirer.prompt(questions)
+                
+                output_file = answers['output_file'].strip()
+                # If empty, overwrite original file
+                if not output_file:
+                    output_file = str(markdown_path)
+                    
+                # Ask for confirmation if overwriting the original
+                if output_file == str(markdown_path):
+                    confirm = inquirer.prompt([
+                        inquirer.Confirm(
+                            'confirm_overwrite',
+                            message='This will overwrite the original file. Are you sure?',
+                            default=False
+                        )
+                    ])
+                    
+                    if not confirm['confirm_overwrite']:
+                        print("Operation cancelled.")
+                        return True
+                        
+                print(f"\nApplying fixes to markdown file... (this may take some time)")
+                
+                # Apply fixes
+                report, num_fixes = validator.fix_errors_in_file(
+                    str(markdown_path), 
+                    output_file,
+                    min_confidence=answers['confidence'],
+                    types_to_fix=answers['fix_types']
+                )
+                
+                print(report)
+                
+                # Ask if user wants to open the fixed file
+                if num_fixes > 0:
+                    confirm = inquirer.prompt([
+                        inquirer.Confirm(
+                            'open_fixed',
+                            message='Would you like to open the corrected file?',
+                            default=False
+                        )
+                    ])
+                    
+                    if confirm['open_fixed']:
+                        import subprocess
+                        import platform
+                        
+                        try:
+                            if platform.system() == 'Darwin':  # macOS
+                                subprocess.call(('open', output_file))
+                            elif platform.system() == 'Windows':
+                                os.startfile(output_file)
+                            else:  # linux variants
+                                subprocess.call(('xdg-open', output_file))
+                        except Exception as e:
+                            print(f"Could not open file: {e}")
         
         return True
     except Exception as e:
