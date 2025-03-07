@@ -120,6 +120,78 @@ def process_pdf_command():
     
     return 0
 
+def validate_markdown_command():
+    """Validate a markdown file for errors using NLP."""
+    parser = argparse.ArgumentParser(description="Validate markdown content using NLP")
+    
+    parser.add_argument(
+        "markdown_path",
+        help="Path to the Markdown file to validate"
+    )
+    
+    parser.add_argument(
+        "-o", "--output",
+        help="Path to save validation report (default: same directory with _validation.txt suffix)"
+    )
+    
+    parser.add_argument(
+        "--ignore-code",
+        action="store_true",
+        help="Ignore code blocks during validation"
+    )
+    
+    parser.add_argument(
+        "--confidence",
+        type=float,
+        default=0.85,
+        help="Minimum confidence threshold for reporting errors (0.0-1.0)"
+    )
+    
+    args = parser.parse_args(sys.argv[2:])
+    
+    # Validate the markdown
+    md_path = Path(args.markdown_path)
+    
+    if not md_path.exists():
+        print(f"Error: Markdown file not found: {md_path}")
+        return 1
+    
+    # Determine output path
+    if args.output:
+        output_path = Path(args.output)
+    else:
+        output_path = md_path.parent / (md_path.stem + "_validation.txt")
+    
+    try:
+        from .nlp.markdown_validator import MarkdownValidator
+        
+        # Configure validator
+        validator_config = {
+            'ignore_code_blocks': args.ignore_code,
+            'min_confidence': args.confidence,
+            'word_correction': {}
+        }
+        
+        validator = MarkdownValidator(validator_config)
+        
+        print(f"Validating markdown: {md_path}")
+        report = validator.validate_and_report(str(md_path), str(output_path))
+        
+        # Print a summary to console
+        report_lines = report.split('\n')
+        if len(report_lines) > 10:
+            # Show first 10 lines if report is long
+            print('\n'.join(report_lines[:10]))
+            print(f"... and more. Full report saved to {output_path}")
+        else:
+            print(report)
+        
+        return 0
+    except Exception as e:
+        logger.error(f"Error validating Markdown: {str(e)}")
+        print(f"ERROR: Failed to validate Markdown: {str(e)}")
+        return 1
+
 def main():
     """Route to appropriate subcommand."""
     if len(sys.argv) < 2:
@@ -134,6 +206,9 @@ def main():
     elif sys.argv[1] == "process-pdf":
         # Process a PDF and optionally convert to markdown
         return process_pdf_command()
+    elif sys.argv[1] == "validate-md":
+        # Validate a markdown file
+        return validate_markdown_command()
     else:
         # Default to the main CLI for other commands or flags
         return cli_main()

@@ -11,6 +11,7 @@ import inquirer
 from datetime import datetime
 from tqdm import tqdm  # Import tqdm for progress bars
 import time
+import glob
 
 from .extraction.pdf_extractor import PDFExtractor
 from .utils.file_handler import write_yaml, write_json, write_file
@@ -21,6 +22,7 @@ from .processing.text_processor import TextProcessor
 from .nlp.text_structure import TextStructureAnalyzer
 from .processing.line_processor import LineProcessor
 from .processing.chapter_processor import ChapterProcessor
+from .nlp.markdown_validator import MarkdownValidator
 
 logger = get_logger(__name__)
 
@@ -381,202 +383,182 @@ def _format_table_content(table):
     return "\n".join(output)
 
 def main():
-    """Command-line entry point."""
-    parser = argparse.ArgumentParser(description="PDF Text Extractor CLI")
+    """Main CLI entry point."""
+    # First, ask if the user wants to extract PDFs or validate markdown
+    questions = [
+        inquirer.List(
+            'action',
+            message='What would you like to do?',
+            choices=[
+                ('Extract text from PDF', 'extract'),
+                ('Validate markdown file', 'validate')
+            ],
+        ),
+    ]
+    answers = inquirer.prompt(questions)
     
-    parser.add_argument(
-        "--input-dir", 
-        type=str,
-        default="data/input",
-        help="Directory containing PDF files (default: data/input)"
-    )
-    
-    parser.add_argument(
-        "--output-dir", 
-        type=str,
-        default="data/output",
-        help="Directory to save output files (default: data/output)"
-    )
-    
-    parser.add_argument(
-        "--format", 
-        type=str,
-        choices=["yaml", "json", "txt"],
-        help="Output format (if not specified, will prompt)"
-    )
-    
-    parser.add_argument(
-        "--file", 
-        type=str,
-        help="Specific PDF file to process (if not specified, will show selection)"
-    )
-    
-    parser.add_argument(
-        "--type",
-        type=str,
-        choices=["raw", "lines", "validated", "processed", "lines_chapters", "lines_chapters_validation"],
-        default="lines_chapters",
-        help="Level of processing to apply (default: lines_chapters)"
-    )
-    
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging"
-    )
-    
-    # New arguments for Markdown conversion
-    parser.add_argument(
-        "--to-markdown",
-        action="store_true",
-        help="Convert processed output to Markdown (sets --type to 'processed' automatically)"
-    )
-    
-    parser.add_argument(
-        "--md-output",
-        type=str,
-        help="Path for Markdown output file (default: input filename with .md extension)"
-    )
-    
-    parser.add_argument(
-        "--no-toc",
-        action="store_true",
-        help="Disable table of contents in Markdown output"
-    )
-    
-    parser.add_argument(
-        "--clean-text",
-        choices=["none", "light", "advanced"],
-        default="light",
-        help="Level of text cleaning for Markdown output (none, light, advanced)"
-    )
-    
-    args = parser.parse_args()
-    
-    # If to-markdown is specified, set type to processed
-    if args.to_markdown:
-        args.type = "processed"
-        # If format not specified, default to yaml for intermediate storage
-        if not args.format:
-            args.format = "yaml"
-    
-    # Create directories if they don't exist
-    input_dir = Path(args.input_dir)
-    output_dir = Path(args.output_dir)
-    
-    os.makedirs(input_dir, exist_ok=True)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Create output subdirectories
-    for subdir in ["raw", "lines", "validated", "processed"]:
-        os.makedirs(output_dir / subdir, exist_ok=True)
-    
-    # Get PDF files
-    if args.file:
-        pdf_path = Path(args.file)
-        if not pdf_path.exists():
-            logger.error(f"File not found: {pdf_path}")
+    if answers['action'] == 'extract':
+        # Original PDF extraction flow
+        pdf_path, output_format, processing_level = get_extraction_options()
+        
+        if not pdf_path:
+            print("No PDF file selected. Exiting.")
             return 1
-        pdf_files = [pdf_path]
+        
+        print(f"\nExtracting text from {pdf_path}")
+        logger.info(f"Extracting text from {pdf_path}")
+        
+        output_dir = Path("data/output") 
+        result = process_pdf(pdf_path, output_format, output_dir, processing_level)
+        
+        return 0
     else:
-        pdf_files = get_pdf_files(input_dir)
-        if not pdf_files:
-            logger.error(f"No PDF files found in {input_dir}")
+        # New markdown validation flow
+        markdown_path = select_markdown_file()
+        
+        if not markdown_path:
+            print("No markdown file selected. Exiting.")
             return 1
+        
+        validate_markdown(markdown_path)
+        return 0
+
+def select_markdown_file():
+    """Let the user select a markdown file to validate."""
+    # Find all markdown files in the output directory
+    markdown_files = glob.glob("data/output/markdown/*.md")
     
-    # Select PDF file if not specified
-    if args.file:
-        selected_pdf = Path(args.file)
-    else:
-        selected_pdf = select_pdf_file(pdf_files)
-        if not selected_pdf:
-            logger.error("No PDF file selected")
-            return 1
+    if not markdown_files:
+        print("No markdown files found in data/output/markdown/")
+        # Ask if user wants to specify a different path
+        questions = [
+            inquirer.Confirm(
+                'custom_path',
+                message='No files found. Would you like to specify a custom path?',
+                default=False
+            ),
+        ]
+        answers = inquirer.prompt(questions)
+        
+        if answers['custom_path']:
+            # Ask for a custom path
+            questions = [
+                inquirer.Path(
+                    'markdown_path',
+                    message='Enter the path to the markdown file:',
+                    path_type=inquirer.Path.FILE,
+                    exists=True,
+                ),
+            ]
+            answers = inquirer.prompt(questions)
+            return Path(answers['markdown_path'])
+        else:
+            return None
     
-    # Select output format if not specified
-    if args.format:
-        output_format = args.format
-    else:
-        output_format = select_output_format()
-        if not output_format:
-            logger.error("No output format selected")
-            return 1
-            
-    # Select output type if using interactive mode
-    output_type = args.type
-    to_markdown = False
-    if args.file is None and args.format is None:
-        selected_type = select_output_type()
-        if selected_type:
-            if selected_type == "markdown":
-                output_type = "processed"  # For markdown, we need to use processed type
-                to_markdown = True
-            else:
-                output_type = selected_type
+    # Create a list of markdown files for selection
+    markdown_choices = [(f"{Path(f).name} ({Path(f).stat().st_size / 1024:.1f} KB)", f) for f in markdown_files]
     
-    # Enable debug logging if requested
-    if args.debug:
-        from .utils.logger import enable_debug_logging
-        enable_debug_logging()
-        logger.debug("Debug logging enabled")
+    questions = [
+        inquirer.List(
+            'markdown_file',
+            message='Select a markdown file to validate:',
+            choices=markdown_choices,
+        ),
+    ]
     
-    # Process the PDF
-    result = process_pdf(selected_pdf, output_format, output_dir, output_type)
+    answers = inquirer.prompt(questions)
+    return Path(answers['markdown_file'])
+
+def validate_markdown(markdown_path):
+    """Validate a markdown file and show results."""
+    print(f"Validating markdown file: {markdown_path}")
     
-    # Convert to markdown if requested
-    if to_markdown or args.to_markdown:
-        try:
-            from .converters.markdown_converter import convert_to_markdown, MarkdownConverter
+    # Generate default output path
+    default_output_path = str(markdown_path.parent / (markdown_path.stem + "_validation.txt"))
+    
+    # Ask for validation options
+    questions = [
+        inquirer.Confirm(
+            'ignore_code',
+            message='Ignore code blocks during validation?',
+            default=True
+        ),
+        inquirer.List(
+            'confidence',
+            message='Select confidence threshold for reporting errors:',
+            choices=[
+                ('High (0.9) - Fewer false positives', 0.9),
+                ('Medium (0.85) - Balanced', 0.85),
+                ('Low (0.8) - More suggestions', 0.8),
+            ],
+            default=1,
+        ),
+        inquirer.Text(
+            'output_path',
+            message='Enter path for validation report (or leave empty for default):',
+            default=default_output_path,
+        ),
+    ]
+    
+    answers = inquirer.prompt(questions)
+    
+    # Use default path if empty
+    if not answers['output_path'].strip():
+        answers['output_path'] = default_output_path
+    
+    # Configure validator
+    validator_config = {
+        'ignore_code_blocks': answers['ignore_code'],
+        'min_confidence': answers['confidence'],
+        'word_correction': {}
+    }
+    
+    try:
+        # Ensure output directory exists
+        output_path = Path(answers['output_path'])
+        os.makedirs(output_path.parent, exist_ok=True)
+        
+        validator = MarkdownValidator(validator_config)
+        report = validator.validate_and_report(str(markdown_path), str(output_path))
+        
+        # Print a summary to console
+        report_lines = report.split('\n')
+        if len(report_lines) > 15:
+            # Show first 15 lines if report is long
+            print('\n'.join(report_lines[:15]))
+            print(f"... and more. Full report saved to {answers['output_path']}")
+        else:
+            print(report)
             
-            # Determine output path for Markdown
-            if args.md_output:
-                md_output = Path(args.md_output)
-            else:
-                md_output = output_dir / 'markdown' / (selected_pdf.stem + '.md')
+        # Ask if user wants to open the report in a text editor
+        if len(report_lines) > 5:  # Only if there are errors
+            questions = [
+                inquirer.Confirm(
+                    'open_report',
+                    message='Would you like to open the validation report?',
+                    default=False
+                ),
+            ]
+            answers = inquirer.prompt(questions)
             
-            os.makedirs(md_output.parent, exist_ok=True)
-            
-            # Configure Markdown options
-            md_config = {
-                'toc': not args.no_toc,
-                'text_cleaning': args.clean_text,
-                'keep_front_matter': True,  # Keep all content including front matter
-                'aggressive_cleaning': True  # Use aggressive text cleaning
-            }
-            
-            # Get the intermediate file path that was just created
-            intermediate_path = None
-            if output_format == 'yaml':
-                intermediate_path = output_dir / output_type / (selected_pdf.stem + '.yaml')
-            elif output_format == 'json':
-                intermediate_path = output_dir / output_type / (selected_pdf.stem + '.json')
-            
-            if intermediate_path and intermediate_path.exists():
-                print(f"\nConverting to Markdown: {intermediate_path} -> {md_output}")
+            if answers['open_report']:
+                import subprocess
+                import platform
                 
-                # Convert the intermediate file to Markdown
-                markdown_text = convert_to_markdown(intermediate_path, None, md_config)
-                
-                # Write the markdown text to file
-                with open(md_output, 'w', encoding='utf-8') as f:
-                    f.write(markdown_text)
-                
-                print(f"Markdown saved to {md_output}")
-                
-                # Show a preview of the markdown file size
-                file_size = os.path.getsize(md_output)
-                print(f"Markdown file size: {file_size/1024:.1f} KB")
-                
-                # Show count of chapters and headings as sanity check
-                heading_count = markdown_text.count('\n#')
-                print(f"Document contains approximately {heading_count} headings")
-            else:
-                print(f"Warning: Could not find processed file to convert to Markdown")
-        except Exception as e:
-            logger.error(f"Error converting to Markdown: {str(e)}")
-            print(f"ERROR: Failed to convert to Markdown: {str(e)}")
-    
-    return 0
+                try:
+                    if platform.system() == 'Darwin':  # macOS
+                        subprocess.call(('open', str(output_path)))
+                    elif platform.system() == 'Windows':
+                        os.startfile(str(output_path))
+                    else:  # linux variants
+                        subprocess.call(('xdg-open', str(output_path)))
+                except Exception as e:
+                    print(f"Could not open report: {e}")
+        
+        return True
+    except Exception as e:
+        print(f"Error validating markdown: {e}")
+        return False
 
 if __name__ == "__main__":
     sys.exit(main()) 

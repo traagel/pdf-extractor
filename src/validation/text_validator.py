@@ -5,6 +5,7 @@ Text validation module for checking the quality of extracted text.
 import re
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
+from tqdm import tqdm
 
 @dataclass
 class ValidationResult:
@@ -154,3 +155,89 @@ class TextValidator:
         # Check if headers or footers are suspiciously similar
         return (len(set(headers)) == 1 and len(headers) > 2) or \
                (len(set(footers)) == 1 and len(footers) > 2)
+
+    def validate_chapter(self, chapter, with_progress=True):
+        """
+        Validate a chapter with progress tracking.
+        
+        Args:
+            chapter: Chapter data to validate
+            with_progress: Whether to show a progress bar
+            
+        Returns:
+            Validation results
+        """
+        # Get the actual chapter number and title
+        chapter_num = chapter.get('number', 0)
+        chapter_title = chapter.get('title', 'untitled')
+        
+        self.logger.debug(f"Validating chapter {chapter_num}: {chapter_title}")
+        
+        results = {
+            'chapter_number': chapter_num,
+            'chapter_title': chapter_title,
+            'main_content': [],
+            'subchapters': [],
+            'tables': []
+        }
+        
+        # Get content from nested structure
+        chapter_content = chapter.get('content', {})
+        
+        # Get all content that needs validation
+        content_to_validate = []
+        
+        # Add main content
+        main_content = chapter_content.get('main_content', [])
+        if main_content:
+            content_to_validate.extend((line, 'main') for line in main_content)
+        
+        # Add subchapter content
+        for subchapter in chapter_content.get('subchapters', []):
+            sub_lines = subchapter.get('lines', [])
+            if sub_lines:
+                content_to_validate.extend(
+                    (line, f"sub:{subchapter.get('title', 'untitled')}") 
+                    for line in sub_lines
+                )
+        
+        # Add table content
+        for table in chapter_content.get('tables', []):
+            if table:
+                content_to_validate.append((str(table), 'table'))
+        
+        # Only create progress bar if we have content to validate
+        total_items = len(content_to_validate)
+        pbar = None
+        if with_progress and total_items > 0:
+            pbar = tqdm(
+                total=total_items,
+                desc=f"Validating Ch.{chapter_num}",
+                leave=True,
+                unit='lines'
+            )
+        
+        try:
+            # Validate all content
+            for content, content_type in content_to_validate:
+                validation = self.validate_text(content)
+                
+                if not validation['valid']:
+                    if content_type == 'main':
+                        results['main_content'].append(validation)
+                    elif content_type.startswith('sub:'):
+                        results['subchapters'].append({
+                            'title': content_type[4:],
+                            'validation': validation
+                        })
+                    else:  # table
+                        results['tables'].append(validation)
+                
+                if pbar:
+                    pbar.update(1)
+                
+        finally:
+            if pbar:
+                pbar.close()
+        
+        return results
