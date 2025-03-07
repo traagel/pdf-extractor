@@ -42,7 +42,7 @@ class MarkdownConverter:
         Convert extracted PDF data to Markdown.
         
         Args:
-            data: Extracted data dictionary (from lines_chapters_validation output)
+            data: Extracted data dictionary
             
         Returns:
             Markdown formatted string
@@ -59,101 +59,112 @@ class MarkdownConverter:
         output.append(f"*Extracted on: {data.get('extraction_date', 'Unknown date')}*")
         output.append("")
         
-        # Filter out chapters that shouldn't be included
-        filtered_chapters = []
-        if 'content' in data and 'chapters' in data['content']:
-            filtered_chapters = []
-            for ch in data['content']['chapters']:
-                # Skip Front Matter if configured
-                if not self.keep_front_matter and ch.get('title') == 'Front Matter' and ch.get('number') == 0:
-                    continue
-                    
-                # Skip chapters that look like TOC entries (with page numbers or dots)
-                title = ch.get('title', '')
-                if self._looks_like_toc_entry(title) or self._is_appendix_heading(title):
-                    continue
-                    
-                # Normalize chapter title
-                if 'title' in ch:
-                    ch['title'] = self._normalize_title(ch['title'])
-                    
-                filtered_chapters.append(ch)
-                
-            # Replace the chapters with filtered ones for processing
-            original_chapters = data['content']['chapters']
-            data['content']['chapters'] = filtered_chapters
-        
-        # Add table of contents if enabled
-        if self.toc_enabled and 'content' in data and 'chapters' in data['content']:
-            output.append("## Table of Contents")
-            output.append("")
+        # Check if we have the new or old content structure
+        if 'content' in data:
+            content_data = data['content']
             
-            for chapter in data['content']['chapters']:
-                chapter_num = chapter.get('number', '')
-                chapter_title = chapter.get('title', 'Untitled Chapter')
+            # Add table of contents if enabled
+            if self.toc_enabled:
+                output.append("## Table of Contents")
+                output.append("")
                 
-                # Create anchor link
-                anchor = self._create_anchor(f"{chapter_num}-{chapter_title}")
-                output.append(f"- [{chapter_num}. {chapter_title}](#{anchor})")
-                
-                # Add subchapters to TOC if present
-                if 'content' in chapter and 'subchapters' in chapter['content']:
-                    for subchapter in chapter['content']['subchapters']:
-                        sub_title = subchapter.get('title', 'Untitled Section')
-                        sub_anchor = self._create_anchor(f"{chapter_num}-{sub_title}")
-                        output.append(f"  - [{sub_title}](#{sub_anchor})")
+                # Try to use the table_of_contents if available
+                if 'table_of_contents' in content_data and content_data['table_of_contents']:
+                    for entry in content_data['table_of_contents']:
+                        entry_type = entry.get('type', 'chapter')
+                        num = entry.get('number', '')
+                        letter = entry.get('letter', '')
+                        title = entry.get('title', 'Untitled')
                         
-            output.append("")
-        
-        # Apply text cleaning if configured
-        if self.text_cleaner and self.text_cleaning != 'none':
-            # Apply NLP-based cleaning to chapters
-            if 'content' in data and 'chapters' in data['content']:
-                cleaned_chapters = []
-                for chapter in data['content']['chapters']:
-                    cleaned_chapter = self.text_cleaner.clean_chapter(chapter)
-                    cleaned_chapters.append(cleaned_chapter)
+                        # Clean up title
+                        title = self._normalize_title(title)
+                        
+                        # Generate TOC entry
+                        if entry_type == 'appendix' and letter:
+                            anchor = self._create_anchor(f"appendix-{letter}-{title}")
+                            output.append(f"- [Appendix {letter}: {title}](#{anchor})")
+                        else:
+                            anchor = self._create_anchor(f"{num}-{title}")
+                            output.append(f"- [{num}. {title}](#{anchor})")
+                        
+                        # Add sections to TOC
+                        if 'sections' in entry and entry['sections']:
+                            for section in entry['sections']:
+                                section_title = section.get('title', '')
+                                if section_title and section_title != 'Main Content':
+                                    sub_anchor = self._create_anchor(f"{num}-{section_title}")
+                                    output.append(f"  - [{section_title}](#{sub_anchor})")
                 
-                # Use cleaned chapters for processing
-                original_chapters = data['content']['chapters']
-                data['content']['chapters'] = cleaned_chapters
-        
-        # Process chapters
-        if 'content' in data and 'chapters' in data['content']:
-            chapters = data['content']['chapters']
+                # Try the old format chapters otherwise
+                elif 'chapters' in content_data:
+                    for chapter in content_data['chapters']:
+                        chapter_num = chapter.get('number', '')
+                        chapter_title = chapter.get('title', 'Untitled Chapter')
+                        
+                        # Clean the title
+                        chapter_title = self._normalize_title(chapter_title)
+                        
+                        # Create anchor link
+                        anchor = self._create_anchor(f"{chapter_num}-{chapter_title}")
+                        output.append(f"- [{chapter_num}. {chapter_title}](#{anchor})")
+                        
+                        # Sections in new format
+                        if 'sections' in chapter and chapter['sections']:
+                            for section in chapter['sections']:
+                                section_title = section.get('title', '')
+                                if section_title and section_title != 'Main Content':
+                                    sub_anchor = self._create_anchor(f"{chapter_num}-{section_title}")
+                                    output.append(f"  - [{section_title}](#{sub_anchor})")
+                        
+                        # Subchapters in old format
+                        elif 'content' in chapter and 'subchapters' in chapter['content']:
+                            for subchapter in chapter['content']['subchapters']:
+                                sub_title = subchapter.get('title', 'Untitled Section')
+                                sub_title = self._normalize_title(sub_title)
+                                sub_anchor = self._create_anchor(f"{chapter_num}-{sub_title}")
+                                output.append(f"  - [{sub_title}](#{sub_anchor})")
+                
+                output.append("")
             
-            # Show progress bar when processing many chapters
-            if len(chapters) > 5:
-                chapters_iter = tqdm(chapters, desc="Converting chapters")
-            else:
-                chapters_iter = chapters
-                
-            for chapter in chapters_iter:
-                output.extend(self._format_chapter(chapter))
+            # Process chapters
+            if 'chapters' in content_data:
+                for chapter in content_data['chapters']:
+                    output.extend(self._format_chapter(chapter))
+            
+            # Process appendices
+            if 'appendices' in content_data and content_data['appendices']:
+                for appendix in content_data['appendices']:
+                    letter = appendix.get('letter', 'A')
+                    title = appendix.get('title', 'Appendix')
+                    title = self._normalize_title(title)
+                    
+                    output.append(f"## Appendix {letter}: {title}")
+                    output.append("")
+                    
+                    # Process sections (new format)
+                    if 'sections' in appendix and appendix['sections']:
+                        for section in appendix['sections']:
+                            section_title = section.get('title')
+                            section_content = section.get('content', '')
+                            
+                            if section_title and section_title != 'Main Content':
+                                output.append(f"### {section_title}")
+                                output.append("")
+                            
+                            if section_content:
+                                formatted_content = self._format_paragraphs(section_content.split('\n'))
+                                output.append(formatted_content)
+                                output.append("")
+                    
+                    # Old format content
+                    elif 'content' in appendix:
+                        content = appendix['content']
+                        output.append(content)
+                        output.append("")
         
-        # Restore original chapters if we filtered them
-        if 'content' in data and 'original_chapters' in locals():
-            data['content']['chapters'] = original_chapters
-        
-        # Apply aggressive cleaning to chapter content if configured
-        if self.aggressive_cleaning and 'content' in data and 'chapters' in data['content']:
-            for chapter in data['content']['chapters']:
-                if 'content' in chapter:
-                    # Clean main content
-                    if 'main_content' in chapter['content']:
-                        chapter['content']['main_content'] = [
-                            self._clean_content_text(line) 
-                            for line in chapter['content']['main_content']
-                        ]
-                        
-                    # Clean subchapters
-                    if 'subchapters' in chapter['content']:
-                        for subchapter in chapter['content']['subchapters']:
-                            if 'lines' in subchapter:
-                                subchapter['lines'] = [
-                                    self._clean_content_text(line) 
-                                    for line in subchapter['lines']
-                                ]
+        # For very simple content (just a string)
+        elif isinstance(data.get('content'), str):
+            output.append(data['content'])
         
         return "\n".join(output)
     
@@ -165,15 +176,40 @@ class MarkdownConverter:
         chapter_num = chapter.get('number', '')
         chapter_title = chapter.get('title', 'Untitled Chapter')
         
+        # Clean the title
+        chapter_title = self._normalize_title(chapter_title)
+        
         if chapter_num:
             output.append(f"## {chapter_num}. {chapter_title}")
         else:
             output.append(f"## {chapter_title}")
-            
+        
         output.append("")
         
-        # Chapter content
-        if 'content' in chapter:
+        # Chapter content - process sections
+        if 'sections' in chapter and chapter['sections']:
+            for section in chapter['sections']:
+                section_title = section.get('title')
+                section_content = section.get('content', '')
+                
+                # Skip 'Main Content' heading but include the content
+                if section_title and section_title != 'Main Content':
+                    output.append(f"### {section_title}")
+                    output.append("")
+                
+                if section_content:
+                    # If this is a table (marked with is_table flag), just include as is
+                    if section.get('is_table'):
+                        output.append(section_content)
+                    else:
+                        # Format the content with proper paragraphs
+                        formatted_content = self._format_paragraphs(section_content.split('\n'))
+                        output.append(formatted_content)
+                    
+                    output.append("")
+        
+        # For backward compatibility with the old format
+        elif 'content' in chapter:
             # Main content
             if 'main_content' in chapter['content'] and chapter['content']['main_content']:
                 # Join lines with proper paragraph breaks
@@ -406,52 +442,47 @@ class MarkdownConverter:
     
     def _normalize_title(self, title: str) -> str:
         """Normalize a spaced or oddly formatted title."""
+        if not title:
+            return "Untitled Section"
+        
         # First, remove any page numbers and dots
         title = re.sub(r'\.{2,}.*?\d+$', '', title)
         
         # Remove all dots and ellipses
         title = re.sub(r'\.{3,}', '', title)
         
+        # Fix spaced characters like "C l a s s e s" -> "Classes"
+        if ' ' in title:
+            # Check for spaced out text
+            words = []
+            for word in title.split():
+                if len(word) == 1 and word.isalpha():
+                    # This is likely a spaced word like "C l a s s e s"
+                    if words and len(words[-1]) == 1:
+                        words[-1] += word
+                    else:
+                        words.append(word)
+                else:
+                    # Fix internal spacing in words like "Cl ass es" -> "Classes"
+                    word = re.sub(r'([A-Za-z])\s+([A-Za-z])', r'\1\2', word)
+                    words.append(word)
+                
+            title = ' '.join(words)
+        
+        # Fix run-together words like "Personalityand" -> "Personality and"
+        title = re.sub(r'([a-z])([A-Z])', r'\1 \2', title)
+        
         # Replace multiple spaces, hyphens with single space
-        title = re.sub(r'[\s\-]+', ' ', title)
+        title = re.sub(r'[\s\-]+', ' ', title).strip()
         
-        # Special case for "Personality and Background"
-        if 'personalityand' in title.lower():
-            title = re.sub(r'[Pp]ersonalityand', 'Personality and', title)
-        
-        # Special case for "Step by Step Characters" with weird spacing
-        if re.search(r'(?i)st\s*[e\s]*p\s*[b\s]*y\s*[s\s]*t\s*e\s*p\s*characters', title):
-            return "Step-by-Step Characters"
-        
-        # Fix common capitalization issues in conjoined words
-        for word_pair in [('Backgroundand', 'Background and'), 
-                          ('Equipmentand', 'Equipment and'),
-                          ('Spellsand', 'Spells and')]:
-            title = title.replace(word_pair[0], word_pair[1])
-        
-        # Handle spaced text like "S t e p" -> "Step"
-        # Look for patterns like "B a c k g r o u n d"
-        spaced_text_pattern = r'([A-Za-z])(\s+[A-Za-z])+\b'
-        
-        while re.search(spaced_text_pattern, title):
-            match = re.search(spaced_text_pattern, title)
-            if match:
-                spaced_word = match.group(0)
-                normalized = re.sub(r'\s+', '', spaced_word)
-                title = title.replace(spaced_word, normalized)
-        
-        # Clean up the text
-        title = title.strip()
+        # Fix common D&D terms
+        title = title.replace('D & D', 'D&D')
+        title = title.replace('Dungeons & Dragons', 'Dungeons & Dragons')
         
         # Fix casing - capitalize first letter of each word
         words = title.split()
         if words:
             title = ' '.join(word.capitalize() for word in words)
-        
-        # Special case for D&D
-        title = title.replace('Dungeons & Dragons', 'Dungeons & Dragons')
-        title = title.replace('D & D', 'D&D')
-        title = title.replace('D&d', 'D&D')
         
         return title
 

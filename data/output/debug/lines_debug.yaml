@@ -40536,15 +40536,6 @@ content:
     avg_line_length: 29.727180702664
     max_line_length: 97
     total_lines: 40503
-extraction_date: '2025-03-06T11:47:33.890498'
+extraction_date: '2025-03-07 11:03:51'
 filename: Players Handbook.pdf
 output_type: lines
-validation:
-  is_valid: false
-  issues:
-  - Line 1 exceeds maximum length (1244542 > 2000)
-  - Non-ASCII characters detected
-  metrics:
-    avg_word_length: 4.2624050199368275
-    unique_chars: 87
-    word_count: 236497
